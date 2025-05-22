@@ -1,0 +1,86 @@
+{
+  "endpoints": {
+    "alert-to-sms": {
+      "description": "Transforms alert data to SMS service format",
+      "target_url": "http://192.168.1.193:8099/alert-to-email",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${SMS_SERVICE_API_KEY}"
+      },
+      "timeout": 30,
+      "transformation": {
+        "recipient": "$.alert.recipient",
+        "message": {
+          "function": "concat",
+          "fields": [
+            "ALERT: ",
+            "$.alert.severity",
+            " - ",
+            "$.alert.message"
+          ]
+        },
+        "priority": [
+          {
+            "condition": "$.alert.severity == \"critical\"",
+            "value": "high"
+          },
+          {
+            "condition": "$.alert.severity == \"warning\"",
+            "value": "medium"
+          },
+          {
+            "condition": "$.alert.severity == \"info\"",
+            "value": "low"
+          }
+        ],
+        "sender": "AlertSystem"
+      }
+    },
+    "alert-to-email": {
+      "description": "Transforms alert data to Email service format",
+      "target_url": "https://email-service.example.com/api/send",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${EMAIL_SERVICE_API_KEY}"
+      },
+      "timeout": 60,
+      "transformation": {
+        "to": "$.alert.recipient",
+        "subject": {
+          "function": "concat",
+          "fields": [
+            "[",
+            "$.alert.severity",
+            "] Alert Notification"
+          ]
+        },
+        "body": "$.alert.message",
+        "html": {
+          "function": "concat",
+          "fields": [
+            "<h1>Alert: ",
+            "$.alert.severity",
+            "</h1><p>",
+            "$.alert.message",
+            "</p>"
+          ]
+        },
+        "importance": [
+          {
+            "condition": "$.alert.severity == \"critical\"",
+            "value": "high"
+          },
+          {
+            "condition": "$.alert.severity == \"warning\"",
+            "value": "normal"
+          },
+          {
+            "condition": "$.alert.severity == \"info\"",
+            "value": "low"
+          }
+        ],
+        "from": "alerts@example.com"
+      }
+    }
+  }
+}

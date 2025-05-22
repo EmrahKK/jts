@@ -1,0 +1,177 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: json-transform-service
+  labels:
+    app: json-transform-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: json-transform-service
+  template:
+    metadata:
+      labels:
+        app: json-transform-service
+    spec:
+      containers:
+      - name: json-transform-service
+        image: json-transform-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        env:
+        - name: CONFIG_PATH
+          value: "/app/config/config.json"
+        - name: SMS_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: sms-service-api-key
+        - name: EMAIL_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: email-service-api-key
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config-volume
+        configMap:
+          name: json-transform-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: json-transform-service
+spec:
+  selector:
+    app: json-transform-service
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: json-transform-config
+data:
+  config.json: |
+    {
+      "endpoints": {
+        "alert-to-sms": {
+          "description": "Transforms alert data to SMS service format",
+          "target_url": "https://sms-service.example.com/api/send",
+          "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer ${SMS_SERVICE_API_KEY}"
+          },
+          "timeout": 30,
+          "transformation": {
+            "recipient": "$.alert.recipient",
+            "message": {
+              "function": "concat",
+              "fields": [
+                "ALERT: ",
+                "$.alert.severity",
+                " - ",
+                "$.alert.message"
+              ]
+            },
+            "priority": [
+              {
+                "condition": "$.alert.severity == \"critical\"",
+                "value": "high"
+              },
+              {
+                "condition": "$.alert.severity == \"warning\"",
+                "value": "medium"
+              },
+              {
+                "condition": "$.alert.severity == \"info\"",
+                "value": "low"
+              }
+            ],
+            "sender": "AlertSystem"
+          }
+        },
+        "alert-to-email": {
+          "description": "Transforms alert data to Email service format",
+          "target_url": "https://email-service.example.com/api/send",
+          "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer ${EMAIL_SERVICE_API_KEY}"
+          },
+          "timeout": 60,
+          "transformation": {
+            "to": "$.alert.recipient",
+            "subject": {
+              "function": "concat",
+              "fields": [
+                "[",
+                "$.alert.severity",
+                "] Alert Notification"
+              ]
+            },
+            "body": "$.alert.message",
+            "html": {
+              "function": "concat",
+              "fields": [
+                "<h1>Alert: ",
+                "$.alert.severity",
+                "</h1><p>",
+                "$.alert.message",
+                "</p>"
+              ]
+            },
+            "importance": [
+              {
+                "condition": "$.alert.severity == \"critical\"",
+                "value": "high"
+              },
+              {
+                "condition": "$.alert.severity == \"warning\"",
+                "value": "normal"
+              },
+              {
+                "condition": "$.alert.severity == \"info\"",
+                "value": "low"
+              }
+            ],
+            "from": "alerts@example.com"
+          }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-keys
+type: Opaque
+stringData:
+  sms-service-api-key: "your-sms-service-api-key-here"
+  email-service-api-key: "your-email-service-api-key-here"
